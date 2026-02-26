@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fraud-ML 4-Week Day-by-Day Checklist</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Serif:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8f4ea;
+      --bg-2: #efe7d6;
+      --panel: #fffdf7;
+      --text: #1f2933;
+      --muted: #50616f;
+      --brand: #0f766e;
+      --brand-soft: #d6f2ef;
+      --accent: #b45309;
+      --done: #166534;
+      --border: #d8d5cc;
+      --shadow: 0 16px 40px rgba(26, 33, 40, 0.12);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 15%, #ffe8c7 0%, transparent 42%),
+        radial-gradient(circle at 85% 10%, #d8f1ef 0%, transparent 45%),
+        linear-gradient(160deg, var(--bg) 0%, var(--bg-2) 100%);
+      min-height: 100vh;
+    }
+
+    .container {
+      width: min(1100px, calc(100% - 2rem));
+      margin: 2rem auto 3rem;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #fffef8, #fff9ef);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      box-shadow: var(--shadow);
+      padding: 1.3rem 1.2rem 1.2rem;
+    }
+
+    h1 {
+      margin: 0 0 0.45rem;
+      font-size: clamp(1.25rem, 1rem + 1.4vw, 2rem);
+      letter-spacing: 0.01em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-family: "IBM Plex Serif", Georgia, serif;
+      line-height: 1.5;
+      font-size: 0.98rem;
+    }
+
+    .stats {
+      margin-top: 1rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.65rem 0.75rem;
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .stat-value {
+      font-size: 1.15rem;
+      font-weight: 700;
+    }
+
+    .progress-wrap {
+      margin-top: 0.95rem;
+      background: #efece4;
+      border-radius: 999px;
+      overflow: hidden;
+      height: 14px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--brand), #14b8a6);
+      transition: width 260ms ease-in-out;
+    }
+
+    .controls {
+      margin-top: 0.95rem;
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      padding: 0.5rem 0.72rem;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 150ms ease, box-shadow 150ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 14px rgba(18, 33, 45, 0.14);
+    }
+
+    .btn-primary {
+      background: var(--brand);
+      border-color: #0e6760;
+      color: #f7fffe;
+    }
+
+    .btn-danger {
+      background: #fff7f3;
+      border-color: #f2c4ab;
+      color: var(--accent);
+    }
+
+    .week {
+      margin-top: 1.2rem;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.8rem;
+      backdrop-filter: blur(2px);
+    }
+
+    .week-title {
+      margin: 0 0 0.7rem;
+      font-size: 1.05rem;
+      color: #113e3a;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 0.7rem;
+    }
+
+    .day-card {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      border-radius: 13px;
+      padding: 0.72rem 0.72rem 0.65rem;
+      animation: card-in 450ms ease both;
+    }
+
+    .day-card.done {
+      border-color: #b6dec4;
+      background: #f5fff8;
+    }
+
+    .day-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.55rem;
+      margin-bottom: 0.45rem;
+    }
+
+    .day-number {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .day-title {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    .pill {
+      font-size: 0.74rem;
+      border-radius: 999px;
+      padding: 0.14rem 0.5rem;
+      background: var(--brand-soft);
+      color: #0d5f58;
+      white-space: nowrap;
+    }
+
+    .task-list {
+      display: grid;
+      gap: 0.36rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .task-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      line-height: 1.35;
+      color: #263846;
+    }
+
+    .task-item input[type="checkbox"] {
+      margin-top: 2px;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--brand);
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+
+    .task-item label {
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .task-item.done label {
+      text-decoration: line-through;
+      color: #5d7066;
+    }
+
+    .day-footer {
+      margin-top: 0.55rem;
+      color: #5f6f7d;
+      font-size: 0.78rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .day-footer strong {
+      color: var(--done);
+    }
+
+    .empty-note {
+      margin-top: 0.8rem;
+      padding: 0.9rem;
+      border-radius: 12px;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      display: none;
+      background: #fff;
+    }
+
+    @keyframes card-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 700px) {
+      .container {
+        width: min(100%, calc(100% - 1rem));
+        margin-top: 1rem;
+      }
+
+      .hero,
+      .week {
+        border-radius: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="hero">
+      <h1>Fraud-ML: 4-Week Daily Checklist</h1>
+      <p class="subtitle">
+        Track work day by day. Your checkmarks are saved automatically in this browser.
+      </p>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Total Tasks</div>
+          <div class="stat-value" id="totalTasks">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Completed Tasks</div>
+          <div class="stat-value" id="doneTasks">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Completion</div>
+          <div class="stat-value" id="completionRate">0%</div>
+        </div>
+      </div>
+
+      <div class="progress-wrap" aria-label="Checklist progress">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+
+      <div class="controls">
+        <button class="btn-primary" id="showIncompleteBtn" type="button">Show Incomplete Only</button>
+        <button id="showAllBtn" type="button">Show All</button>
+        <button class="btn-danger" id="resetBtn" type="button">Reset All Checks</button>
+      </div>
+    </section>
+
+    <section id="weeksContainer" aria-live="polite"></section>
+    <div class="empty-note" id="emptyNote">No incomplete tasks left. Switch to "Show All" to review finished items.</div>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "fraud_ml_4week_daily_checklist_v1";
+
+    const plan = [
+      {
+        week: "Week 1: Foundations + Reproducible Baseline",
+        days: [
+          { day: 1, title: "Kickoff and context setup", tasks: [
+            "Read docs/problem.md end-to-end and restate the objective in your notes.",
+            "Create a notes file: reports/run_notes_week1.md with date and goals.",
+            "List open questions about metrics, thresholding, and business impact."
+          ]},
+          { day: 2, title: "Data contract deep dive", tasks: [
+            "Review src/data_contract.py and confirm required columns.",
+            "Check dataset schema against required fields (Time, V1-V28, Amount, Class).",
+            "Document any schema mismatch risks in run_notes_week1.md."
+          ]},
+          { day: 3, title: "Baseline training run", tasks: [
+            "Run python src/train_baseline.py --data-path data/creditcard.csv.",
+            "Capture train/test row counts and key metrics from CLI output.",
+            "Record runtime behavior and any warnings/errors."
+          ]},
+          { day: 4, title: "Metric interpretation", tasks: [
+            "Fill reports/baseline_metrics.md with measured values.",
+            "Interpret PR-AUC and Recall @ FPR<=2% in plain language.",
+            "Write 2-3 hypotheses for improving recall without raising FPR too much."
+          ]},
+          { day: 5, title: "Threshold study", tasks: [
+            "Run sensitivity checks for at least 3 target FPR values (example: 1%, 2%, 3%).",
+            "Track threshold and recall movement at each FPR target.",
+            "Note the best operating point for current baseline."
+          ]},
+          { day: 6, title: "Policy mapping draft", tasks: [
+            "Draft first pass of approve/review/decline score bands.",
+            "Estimate operational effect of review queue size.",
+            "Update baseline_metrics.md threshold policy section."
+          ]},
+          { day: 7, title: "Week 1 review", tasks: [
+            "Summarize Week 1 learnings and blockers in run_notes_week1.md.",
+            "List top 3 improvements to test in Week 2.",
+            "Ensure all Week 1 artifacts are organized in reports/."
+          ]}
+        ]
+      },
+      {
+        week: "Week 2: Error Analysis + Better Features",
+        days: [
+          { day: 8, title: "Error analysis notebook setup", tasks: [
+            "Create notebooks/error_analysis.ipynb.",
+            "Load model predictions and chosen threshold into notebook.",
+            "Set up sections for FP/FN analysis and segment breakdown."
+          ]},
+          { day: 9, title: "Confusion matrix and core errors", tasks: [
+            "Compute confusion matrix at chosen threshold.",
+            "Calculate precision, recall, and FPR from confusion matrix.",
+            "Paste key numbers into reports/error_analysis_week2.md."
+          ]},
+          { day: 10, title: "False positive analysis", tasks: [
+            "Inspect a sample of highest-score false positives.",
+            "Look for patterns in Amount and transaction time windows.",
+            "Document 2-3 recurring FP patterns."
+          ]},
+          { day: 11, title: "False negative analysis", tasks: [
+            "Inspect a sample of false negatives missed by baseline.",
+            "Identify where decision boundary is too conservative.",
+            "Document 2-3 recurring FN patterns."
+          ]},
+          { day: 12, title: "Segment diagnostics", tasks: [
+            "Run segmented metrics by Amount buckets.",
+            "Run segmented metrics by time buckets.",
+            "Compare score distributions for fraud vs non-fraud."
+          ]},
+          { day: 13, title: "Model tuning experiments", tasks: [
+            "Test at least 2 baseline changes (regularization/class_weight/scaling).",
+            "Keep one change per run for clean comparison.",
+            "Log experiment settings and outcomes."
+          ]},
+          { day: 14, title: "Week 2 report", tasks: [
+            "Write reports/error_analysis_week2.md summary.",
+            "Pick best Week 2 model candidate and justify choice.",
+            "Define what should be validated in Week 3 policy simulation."
+          ]}
+        ]
+      },
+      {
+        week: "Week 3: Decision Policy + Reliability",
+        days: [
+          { day: 15, title: "Policy requirements", tasks: [
+            "Define acceptable ranges for approve/review/decline volumes.",
+            "Set target guardrails for fraud capture and false positives.",
+            "Document assumptions for manual review capacity."
+          ]},
+          { day: 16, title: "Implement policy simulation", tasks: [
+            "Create a simple policy evaluator for T1/T2 score bands.",
+            "Compute approve/review/decline rates on test data.",
+            "Compute fraud capture by band."
+          ]},
+          { day: 17, title: "Threshold pair experiments", tasks: [
+            "Try at least 4 T1/T2 combinations.",
+            "Compare operational load vs fraud catch tradeoff.",
+            "Shortlist top 2 candidate policies."
+          ]},
+          { day: 18, title: "Stress and sensitivity checks", tasks: [
+            "Run threshold perturbation checks around the shortlisted policy.",
+            "Evaluate policy stability under slight threshold changes.",
+            "Record sensitivity observations."
+          ]},
+          { day: 19, title: "Experiment governance", tasks: [
+            "Create reports/experiments_week3.md template if missing.",
+            "Log run date, config, dataset version, and metrics consistently.",
+            "Standardize naming for model/policy runs."
+          ]},
+          { day: 20, title: "Reliability and drift plan", tasks: [
+            "Draft stability metrics to monitor score distribution drift.",
+            "Define thresholds for alerting on metric deterioration.",
+            "Document monitoring proposal in notes."
+          ]},
+          { day: 21, title: "Week 3 policy report", tasks: [
+            "Write reports/policy_simulation_week3.md with recommended T1/T2.",
+            "Explain expected business impact and tradeoffs.",
+            "Call out risks and fallback policy."
+          ]}
+        ]
+      },
+      {
+        week: "Week 4: Production Readiness + Portfolio Quality",
+        days: [
+          { day: 22, title: "Inference entrypoint", tasks: [
+            "Add or refine minimal inference entrypoint for batch/sample predictions.",
+            "Ensure input validation uses src/data_contract.py.",
+            "Handle clear failures for schema mismatch."
+          ]},
+          { day: 23, title: "Validation tests", tasks: [
+            "Add tests for missing required columns.",
+            "Add tests for label leakage prevention in feature selection.",
+            "Run tests and capture results."
+          ]},
+          { day: 24, title: "Prediction flow tests", tasks: [
+            "Add happy-path inference/prediction test.",
+            "Add one failure-path test for invalid payload.",
+            "Confirm deterministic behavior where expected."
+          ]},
+          { day: 25, title: "Latency and performance check", tasks: [
+            "Benchmark p95 prediction latency on representative sample.",
+            "Compare current result with <200ms target.",
+            "Note optimization ideas if target is missed."
+          ]},
+          { day: 26, title: "Monitoring and operations doc", tasks: [
+            "Define online/offline metrics to monitor after deployment.",
+            "Include drift, recall proxy, FPR proxy, and latency tracking.",
+            "Document alert thresholds and response actions."
+          ]},
+          { day: 27, title: "Final phase summary", tasks: [
+            "Write reports/final_phase1_summary.md.",
+            "Summarize baseline, best config, policy, and monitoring plan.",
+            "Highlight known limitations and next phase ideas."
+          ]},
+          { day: 28, title: "Portfolio polish and walkthrough", tasks: [
+            "Review docs for clarity and consistency.",
+            "Prepare a 5-10 minute walkthrough narrative for interviews.",
+            "Create final checklist of artifacts and verify completeness."
+          ]}
+        ]
+      }
+    ];
+
+    function flattenTasks() {
+      const entries = [];
+      plan.forEach((week, wIdx) => {
+        week.days.forEach((day) => {
+          day.tasks.forEach((task, tIdx) => {
+            entries.push({
+              id: `w${wIdx + 1}-d${day.day}-t${tIdx + 1}`,
+              week: week.week,
+              day: day.day,
+              title: day.title,
+              task
+            });
+          });
+        });
+      });
+      return entries;
+    }
+
+    function loadState() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function saveState(state) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    const state = loadState();
+    let showIncompleteOnly = false;
+
+    function render() {
+      const weeksContainer = document.getElementById("weeksContainer");
+      const emptyNote = document.getElementById("emptyNote");
+      weeksContainer.innerHTML = "";
+
+      let visibleCards = 0;
+
+      plan.forEach((week, wIdx) => {
+        const weekSection = document.createElement("section");
+        weekSection.className = "week";
+
+        const weekTitle = document.createElement("h2");
+        weekTitle.className = "week-title";
+        weekTitle.textContent = week.week;
+        weekSection.appendChild(weekTitle);
+
+        const cards = document.createElement("div");
+        cards.className = "cards";
+
+        week.days.forEach((day) => {
+          const dayPrefix = `w${wIdx + 1}-d${day.day}-t`;
+          const dayDoneCount = day.tasks.filter((_, idx) => state[`${dayPrefix}${idx + 1}`]).length;
+          const dayIsDone = dayDoneCount === day.tasks.length;
+
+          if (showIncompleteOnly && dayIsDone) {
+            return;
+          }
+
+          visibleCards += 1;
+
+          const card = document.createElement("article");
+          card.className = `day-card${dayIsDone ? " done" : ""}`;
+
+          const head = document.createElement("div");
+          head.className = "day-head";
+          head.innerHTML = `
+            <div>
+              <div class="day-number">Day ${day.day}</div>
+              <h3 class="day-title">${day.title}</h3>
+            </div>
+            <span class="pill">${dayDoneCount}/${day.tasks.length} done</span>
+          `;
+          card.appendChild(head);
+
+          const taskList = document.createElement("ul");
+          taskList.className = "task-list";
+
+          day.tasks.forEach((task, tIdx) => {
+            const id = `${dayPrefix}${tIdx + 1}`;
+            const li = document.createElement("li");
+            li.className = `task-item${state[id] ? " done" : ""}`;
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.id = id;
+            checkbox.checked = Boolean(state[id]);
+            checkbox.addEventListener("change", (ev) => {
+              state[id] = ev.target.checked;
+              saveState(state);
+              render();
+            });
+
+            const label = document.createElement("label");
+            label.setAttribute("for", id);
+            label.textContent = task;
+
+            li.appendChild(checkbox);
+            li.appendChild(label);
+            taskList.appendChild(li);
+          });
+
+          card.appendChild(taskList);
+
+          const footer = document.createElement("div");
+          footer.className = "day-footer";
+          footer.innerHTML = `
+            <span>${dayDoneCount === day.tasks.length ? "<strong>Day complete</strong>" : "In progress"}</span>
+            <span>Week ${wIdx + 1}</span>
+          `;
+          card.appendChild(footer);
+
+          cards.appendChild(card);
+        });
+
+        if (cards.childElementCount > 0) {
+          weekSection.appendChild(cards);
+          weeksContainer.appendChild(weekSection);
+        }
+      });
+
+      emptyNote.style.display = visibleCards ? "none" : "block";
+      updateStats();
+    }
+
+    function updateStats() {
+      const all = flattenTasks();
+      const total = all.length;
+      const done = all.filter((task) => state[task.id]).length;
+      const pct = total ? Math.round((done / total) * 100) : 0;
+
+      document.getElementById("totalTasks").textContent = String(total);
+      document.getElementById("doneTasks").textContent = String(done);
+      document.getElementById("completionRate").textContent = `${pct}%`;
+      document.getElementById("progressFill").style.width = `${pct}%`;
+    }
+
+    document.getElementById("showIncompleteBtn").addEventListener("click", () => {
+      showIncompleteOnly = true;
+      render();
+    });
+
+    document.getElementById("showAllBtn").addEventListener("click", () => {
+      showIncompleteOnly = false;
+      render();
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      const ok = window.confirm("Reset every checklist item?");
+      if (!ok) {
+        return;
+      }
+      localStorage.removeItem(STORAGE_KEY);
+      Object.keys(state).forEach((key) => delete state[key]);
+      showIncompleteOnly = false;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
