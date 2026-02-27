@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -60,7 +61,7 @@ def split_train_test(df: pd.DataFrame, test_size: float) -> tuple[pd.DataFrame, 
 
 
 def save_model_bundle(
-    model: LogisticRegression,
+    model: Any,
     model_feature_columns: list[str],
     target_fpr: float,
     threshold_for_target_fpr: float,

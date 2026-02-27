@@ -55,6 +55,18 @@ This writes:
 - `reports/error_analysis_week2.md`
 - `reports/error_samples_week2.csv`
 
+## Run Week 2 Model Sweep (Scaled Logistic Regression)
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 src/experiment_scaled_logreg.py \
+  --data-path data/creditcard.csv \
+  --c-values "0.1,0.3,1.0,3.0"
+```
+This writes:
+- `reports/experiments_week2.csv`
+- `reports/experiments_week2.md`
+- `models/week2_best_logreg.joblib`
+
 ## Run Inference
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
