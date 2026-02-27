@@ -42,6 +42,33 @@ It is a practice repository to understand:
 cd /home/xterianhunter/Projects/Fraud-ML
 python3 src/train_baseline.py --data-path data/creditcard.csv
 ```
+This run also saves a model bundle to `models/baseline_logreg.joblib` by default.
+
+## Run Week 2 Error Analysis
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 src/error_analysis.py \
+  --data-path data/creditcard.csv \
+  --model-path models/baseline_logreg.joblib
+```
+This writes:
+- `reports/error_analysis_week2.md`
+- `reports/error_samples_week2.csv`
+
+## Run Inference
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 src/inference.py \
+  --input-path data/creditcard.csv \
+  --model-path models/baseline_logreg.joblib \
+  --output-path reports/inference_output.csv
+```
+
+## Run Tests
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 -m unittest discover -s tests -v
+```
 
 ## Learning + Deployment Focus
 This repo is intended to practice practical deployment-oriented skills, including:

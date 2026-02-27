@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
@@ -42,23 +43,60 @@ def load_data(data_path: Path) -> pd.DataFrame:
     return df
 
 
+def split_train_test(df: pd.DataFrame, test_size: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Temporal split when available, deterministic stratified split otherwise."""
+    if TIME_COLUMN in df.columns:
+        df = df.sort_values(TIME_COLUMN)
+        split_idx = int(len(df) * (1 - test_size))
+        return df.iloc[:split_idx], df.iloc[split_idx:]
+
+    train_df, test_df = train_test_split(
+        df,
+        test_size=test_size,
+        random_state=42,
+        stratify=df[LABEL_COLUMN],
+    )
+    return train_df, test_df
+
+
+def save_model_bundle(
+    model: LogisticRegression,
+    model_feature_columns: list[str],
+    target_fpr: float,
+    threshold_for_target_fpr: float,
+    model_out_path: Path,
+) -> None:
+    """Persist model plus metadata needed for downstream inference/policy."""
+    model_out_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact = {
+        "model": model,
+        "feature_columns": model_feature_columns,
+        "target_fpr": float(target_fpr),
+        "threshold_for_target_fpr": float(threshold_for_target_fpr),
+    }
+    joblib.dump(artifact, model_out_path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=Path, default=Path("data/creditcard.csv"))
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--target-fpr", type=float, default=0.02)
+    parser.add_argument(
+        "--model-out-path",
+        type=Path,
+        default=Path("models/baseline_logreg.joblib"),
+        help="Path to save trained model bundle.",
+    )
+    parser.add_argument(
+        "--skip-model-save",
+        action="store_true",
+        help="If set, do not write model artifact to disk.",
+    )
     args = parser.parse_args()
 
     df = load_data(args.data_path)
-
-    # Temporal split if Time exists; fallback to deterministic split.
-    if TIME_COLUMN in df.columns:
-        df = df.sort_values(TIME_COLUMN)
-        split_idx = int(len(df) * (1 - args.test_size))
-        train_df = df.iloc[:split_idx]
-        test_df = df.iloc[split_idx:]
-    else:
-        train_df, test_df = train_test_split(df, test_size=args.test_size, random_state=42, stratify=df[LABEL_COLUMN])
+    train_df, test_df = split_train_test(df, test_size=args.test_size)
 
     cols = feature_columns(train_df.columns)
     x_train = train_df[cols].to_numpy(dtype=np.float32)
@@ -66,7 +104,7 @@ def main() -> None:
     x_test = test_df[cols].to_numpy(dtype=np.float32)
     y_test = test_df[LABEL_COLUMN].to_numpy(dtype=np.int8)
 
-    model = LogisticRegression(class_weight="balanced", max_iter=500, n_jobs=-1)
+    model = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)
     model.fit(x_train, y_train)
 
     y_score = model.predict_proba(x_test)[:, 1]
@@ -81,6 +119,15 @@ def main() -> None:
     print(f"ROC-AUC: {roc_auc:.6f}")
     print(f"Recall @ FPR<={args.target_fpr:.2%}: {recall:.6f}")
     print(f"Threshold for target FPR: {threshold:.6f}")
+    if not args.skip_model_save:
+        save_model_bundle(
+            model=model,
+            model_feature_columns=cols,
+            target_fpr=args.target_fpr,
+            threshold_for_target_fpr=threshold,
+            model_out_path=args.model_out_path,
+        )
+        print(f"Saved model artifact: {args.model_out_path}")
 
 
 if __name__ == "__main__":

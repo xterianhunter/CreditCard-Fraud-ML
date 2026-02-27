@@ -1,27 +1,27 @@
 # Baseline Metrics Report
 
 ## Run Details
-- Date: 26/02/2026
+- Date: 2026-02-27
 - Dataset version: mlg-ulb/creditcardfraud
 - Train rows: 227845
 - Test rows: 56962
 - Model: LogisticRegression (`class_weight=balanced`)
 
 ## Metrics
-- PR-AUC: 0.745961
-- ROC-AUC: 0.984218
-- Recall @ FPR<=2%: 0.90667
-- Chosen threshold: 0.343726
+- PR-AUC: 0.748374
+- ROC-AUC: 0.985884
+- Recall @ FPR<=2%: 0.89333
+- Chosen threshold: 0.378030
 
 ## Threshold Policy (Draft)
-- `approve`: score < 0.078720
-- `review`: 0.078720 <= score < 0.343726
-- `decline`: score >= 0.343726
+- `approve`: score < 0.080000
+- `review`: 0.080000 <= score < 0.378030
+- `decline`: score >= 0.378030
 
 ## Notes
-- Confusion matrix at threshold `0.343726`:
-  - TN: 55,984
-  - FP: 903
+- Confusion matrix at threshold `0.378030`:
+  - TN: 55,753
+  - FP: 1,134
   - FN: 8
   - TP: 67
-- Include sample false positives / false negatives for error analysis.
+- Week 2 error samples and analysis are in `reports/error_analysis_week2.md`.
