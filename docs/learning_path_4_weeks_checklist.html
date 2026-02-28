@@ -289,6 +289,7 @@
       <h1>Fraud-ML: 4-Week Daily Checklist</h1>
       <p class="subtitle">
         Track work day by day. Your checkmarks are saved automatically in this browser.
+        Default checks below are pre-filled to reflect progress as of 2026-02-27.
       </p>
 
       <div class="stats">
@@ -322,7 +323,44 @@
   </main>
 
   <script>
-    const STORAGE_KEY = "fraud_ml_4week_daily_checklist_v1";
+    const STORAGE_KEY = "fraud_ml_4week_daily_checklist_v2";
+    const DEFAULT_COMPLETED = {
+      "w1-d1-t1": true,
+      "w1-d1-t2": true,
+      "w1-d1-t3": true,
+      "w1-d2-t1": true,
+      "w1-d2-t2": true,
+      "w1-d2-t3": true,
+      "w1-d3-t1": true,
+      "w1-d3-t2": true,
+      "w1-d3-t3": true,
+      "w1-d4-t1": true,
+      "w1-d6-t1": true,
+      "w1-d6-t3": true,
+      "w1-d7-t1": true,
+      "w1-d7-t3": true,
+      "w2-d9-t1": true,
+      "w2-d9-t2": true,
+      "w2-d9-t3": true,
+      "w2-d10-t1": true,
+      "w2-d10-t2": true,
+      "w2-d11-t1": true,
+      "w2-d13-t1": true,
+      "w2-d13-t2": true,
+      "w2-d13-t3": true,
+      "w2-d14-t1": true,
+      "w2-d14-t2": true,
+      "w2-d14-t3": true,
+      "w4-d22-t1": true,
+      "w4-d22-t2": true,
+      "w4-d22-t3": true,
+      "w4-d23-t1": true,
+      "w4-d23-t2": true,
+      "w4-d23-t3": true,
+      "w4-d24-t1": true,
+      "w4-d24-t2": true,
+      "w4-d24-t3": true
+    };
 
     const plan = [
       {
@@ -506,10 +544,12 @@
     }
 
     function loadState() {
+      const base = { ...DEFAULT_COMPLETED };
       try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        return { ...base, ...saved };
       } catch (_) {
-        return {};
+        return base;
       }
     }
 

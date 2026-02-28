@@ -67,6 +67,18 @@ This writes:
 - `reports/experiments_week2.md`
 - `models/week2_best_logreg.joblib`
 
+## Run Week 3 Policy Simulation
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 src/policy_simulation.py \
+  --data-path data/creditcard.csv \
+  --model-path models/week2_best_logreg.joblib
+```
+This writes:
+- `reports/policy_experiments_week3.csv`
+- `reports/experiments_week3.md`
+- `reports/policy_simulation_week3.md`
+
 ## Run Inference
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
