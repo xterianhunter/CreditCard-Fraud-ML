@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import joblib
 import numpy as np
@@ -18,8 +18,15 @@ import pandas as pd
 from data_contract import feature_columns, validate_dataframe
 
 
-DEFAULT_APPROVE_THRESHOLD = 0.08
-DEFAULT_DECLINE_THRESHOLD = 0.50
+PolicyProfile = Literal["primary", "fallback", "artifact"]
+
+# Week 3 selected primary policy (default for production-like scoring).
+DEFAULT_APPROVE_THRESHOLD = 0.11
+DEFAULT_DECLINE_THRESHOLD = 0.45
+
+# Capacity-protecting fallback profile from Week 3.
+FALLBACK_APPROVE_THRESHOLD = 0.19
+FALLBACK_DECLINE_THRESHOLD = 0.80
 
 
 @dataclass
@@ -89,6 +96,27 @@ def validate_thresholds(approve_threshold: float, decline_threshold: float) -> N
         )
 
 
+def resolve_profile_thresholds(
+    *,
+    policy_profile: PolicyProfile,
+    artifact_decline_threshold: float | None,
+) -> tuple[float, float]:
+    """Return default threshold pair for a policy profile."""
+    if policy_profile == "primary":
+        return DEFAULT_APPROVE_THRESHOLD, DEFAULT_DECLINE_THRESHOLD
+    if policy_profile == "fallback":
+        return FALLBACK_APPROVE_THRESHOLD, FALLBACK_DECLINE_THRESHOLD
+    if policy_profile == "artifact":
+        decline = (
+            float(artifact_decline_threshold)
+            if artifact_decline_threshold is not None
+            else DEFAULT_DECLINE_THRESHOLD
+        )
+        approve = min(DEFAULT_APPROVE_THRESHOLD, decline * 0.5)
+        return float(approve), float(decline)
+    raise ValueError(f"Unsupported policy profile: {policy_profile}")
+
+
 def score_with_policy(
     df: pd.DataFrame,
     model: Any,
@@ -123,25 +151,26 @@ def run_inference(
     output_path: Path | None,
     approve_threshold: float | None,
     decline_threshold: float | None,
+    policy_profile: PolicyProfile = "primary",
 ) -> tuple[pd.DataFrame, float, float]:
     """Load data + model and return scored output with resolved thresholds."""
     df = pd.read_csv(input_path)
     validate_dataframe(df, require_label=False)
 
     bundle = load_model_bundle(model_path)
+    profile_approve_threshold, profile_decline_threshold = resolve_profile_thresholds(
+        policy_profile=policy_profile,
+        artifact_decline_threshold=bundle.artifact_decline_threshold,
+    )
     final_decline_threshold = (
         decline_threshold
         if decline_threshold is not None
-        else (
-            bundle.artifact_decline_threshold
-            if bundle.artifact_decline_threshold is not None
-            else DEFAULT_DECLINE_THRESHOLD
-        )
+        else profile_decline_threshold
     )
     final_approve_threshold = (
         approve_threshold
         if approve_threshold is not None
-        else min(DEFAULT_APPROVE_THRESHOLD, final_decline_threshold * 0.5)
+        else profile_approve_threshold
     )
     validate_thresholds(final_approve_threshold, final_decline_threshold)
 
@@ -168,10 +197,16 @@ def main() -> None:
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=Path("models/baseline_logreg.joblib"),
+        default=Path("models/week2_best_logreg.joblib"),
         help="Path to model artifact.",
     )
     parser.add_argument("--output-path", type=Path, default=None, help="Where to write scored CSV.")
+    parser.add_argument(
+        "--policy-profile",
+        choices=["primary", "fallback", "artifact"],
+        default="primary",
+        help="Default threshold profile when explicit thresholds are not provided.",
+    )
     parser.add_argument("--approve-threshold", type=float, default=None, help="Approve upper bound.")
     parser.add_argument("--decline-threshold", type=float, default=None, help="Decline lower bound.")
     args = parser.parse_args()
@@ -180,12 +215,14 @@ def main() -> None:
         input_path=args.input_path,
         model_path=args.model_path,
         output_path=args.output_path,
+        policy_profile=args.policy_profile,
         approve_threshold=args.approve_threshold,
         decline_threshold=args.decline_threshold,
     )
 
     print("=== Inference Summary ===")
     print(f"Rows scored: {len(scored_df)}")
+    print(f"Policy profile: {args.policy_profile}")
     print(f"Approve threshold: {approve_threshold:.6f}")
     print(f"Decline threshold: {decline_threshold:.6f}")
     counts = scored_df["decision"].value_counts().to_dict()

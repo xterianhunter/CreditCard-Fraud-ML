@@ -37,6 +37,13 @@ It is a practice repository to understand:
 - Kaggle: `mlg-ulb/creditcardfraud`
 - Expected schema: `Time`, `V1..V28`, `Amount`, `Class`
 
+## Environment Setup
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
 ## Run Baseline
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
@@ -84,15 +91,81 @@ This writes:
 cd /home/xterianhunter/Projects/Fraud-ML
 python3 src/inference.py \
   --input-path data/creditcard.csv \
-  --model-path models/baseline_logreg.joblib \
+  --model-path models/week2_best_logreg.joblib \
   --output-path reports/inference_output.csv
 ```
+Default policy profile is `primary` (Week 3 selected thresholds: `T1=0.1100`, `T2=0.4500`).
+
+Optional profile switch:
+```bash
+python3 src/inference.py \
+  --input-path data/creditcard.csv \
+  --model-path models/week2_best_logreg.joblib \
+  --policy-profile fallback
+```
+Supported profiles:
+- `primary`: `T1=0.1100`, `T2=0.4500`
+- `fallback`: `T1=0.1900`, `T2=0.8000`
+- `artifact`: uses threshold from model artifact metadata when available
+
+## Run Week 4 Latency Benchmark
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 src/latency_benchmark.py \
+  --data-path data/creditcard.csv \
+  --model-path models/week2_best_logreg.joblib
+```
+This writes:
+- `reports/latency_benchmark_week4.md`
+
+## Build Monitoring Snapshot
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 src/monitoring_snapshot.py \
+  --scored-path reports/inference_output.csv
+```
+This writes:
+- `reports/monitoring_snapshot.md`
 
 ## Run Tests
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
 python3 -m unittest discover -s tests -v
 ```
+
+## CI Test Gate
+- GitHub Actions workflow: `.github/workflows/tests.yml`
+- Trigger: push to `main` and pull requests
+- Command executed in CI:
+  - `python -m unittest discover -s tests -v`
+
+## 5-Minute Demo Walkthrough
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+
+# 1) Train + artifact
+python3 src/train_baseline.py --data-path data/creditcard.csv
+
+# 2) Week 2 best-model sweep
+python3 src/experiment_scaled_logreg.py --data-path data/creditcard.csv
+
+# 3) Week 3 policy simulation
+python3 src/policy_simulation.py --data-path data/creditcard.csv --model-path models/week2_best_logreg.joblib
+
+# 4) Inference with final primary policy
+python3 src/inference.py --input-path data/creditcard.csv --model-path models/week2_best_logreg.joblib --policy-profile primary --output-path reports/inference_output.csv
+
+# 5) Week 4 operational checks
+python3 src/latency_benchmark.py --data-path data/creditcard.csv --model-path models/week2_best_logreg.joblib
+python3 src/monitoring_snapshot.py --scored-path reports/inference_output.csv
+```
+Expected artifacts to highlight:
+- `reports/experiments_week2.md`
+- `reports/experiments_week3.md`
+- `reports/policy_simulation_week3.md`
+- `reports/latency_benchmark_week4.md`
+- `reports/monitoring_snapshot.md`
+- `reports/final_phase1_summary.md`
 
 ## Learning + Deployment Focus
 This repo is intended to practice practical deployment-oriented skills, including:
@@ -107,3 +180,8 @@ This repo is intended to practice practical deployment-oriented skills, includin
 - Learning plan: `docs/learning_path_4_weeks.md`
 - Interactive checklist: `docs/learning_path_4_weeks_checklist.html`
 - Baseline report: `reports/baseline_metrics.md`
+- Week 3 experiments: `reports/experiments_week3.md`
+- Week 3 policy report: `reports/policy_simulation_week3.md`
+- Week 4 latency report: `reports/latency_benchmark_week4.md`
+- Week 4 monitoring snapshot: `reports/monitoring_snapshot.md`
+- Final summary: `reports/final_phase1_summary.md`

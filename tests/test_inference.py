@@ -84,6 +84,7 @@ class InferenceTests(unittest.TestCase):
                 input_path=input_path,
                 model_path=model_path,
                 output_path=output_path,
+                policy_profile="artifact",
                 approve_threshold=0.1,
                 decline_threshold=None,
             )
@@ -94,6 +95,112 @@ class InferenceTests(unittest.TestCase):
             self.assertIn("score", scored_df.columns)
             self.assertIn("decision", scored_df.columns)
             self.assertListEqual(scored_df["decision"].tolist(), ["approve", "review", "decline"])
+
+    def test_run_inference_primary_profile_defaults(self) -> None:
+        input_df = make_valid_dataframe(rows=3, include_label=False)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            input_path = tmp / "input.csv"
+            model_path = tmp / "model.joblib"
+            input_df.to_csv(input_path, index=False)
+            artifact = {
+                "model": StubModel([0.05, 0.15, 0.85]),
+                "feature_columns": sorted(input_df.columns.tolist()),
+                "threshold_for_target_fpr": 0.4,
+                "target_fpr": 0.02,
+            }
+            joblib.dump(artifact, model_path)
+
+            scored_df, approve_t, decline_t = run_inference(
+                input_path=input_path,
+                model_path=model_path,
+                output_path=None,
+                policy_profile="primary",
+                approve_threshold=None,
+                decline_threshold=None,
+            )
+
+            self.assertAlmostEqual(approve_t, 0.11)
+            self.assertAlmostEqual(decline_t, 0.45)
+            self.assertListEqual(scored_df["decision"].tolist(), ["approve", "review", "decline"])
+
+    def test_run_inference_fallback_profile_defaults(self) -> None:
+        input_df = make_valid_dataframe(rows=3, include_label=False)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            input_path = tmp / "input.csv"
+            model_path = tmp / "model.joblib"
+            input_df.to_csv(input_path, index=False)
+            artifact = {
+                "model": StubModel([0.05, 0.15, 0.85]),
+                "feature_columns": sorted(input_df.columns.tolist()),
+                "threshold_for_target_fpr": 0.4,
+                "target_fpr": 0.02,
+            }
+            joblib.dump(artifact, model_path)
+
+            scored_df, approve_t, decline_t = run_inference(
+                input_path=input_path,
+                model_path=model_path,
+                output_path=None,
+                policy_profile="fallback",
+                approve_threshold=None,
+                decline_threshold=None,
+            )
+
+            self.assertAlmostEqual(approve_t, 0.19)
+            self.assertAlmostEqual(decline_t, 0.80)
+            self.assertListEqual(scored_df["decision"].tolist(), ["approve", "approve", "decline"])
+
+    def test_run_inference_raises_for_invalid_threshold_order(self) -> None:
+        input_df = make_valid_dataframe(rows=2, include_label=False)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            input_path = tmp / "input.csv"
+            model_path = tmp / "model.joblib"
+            input_df.to_csv(input_path, index=False)
+            artifact = {
+                "model": StubModel([0.2, 0.8]),
+                "feature_columns": sorted(input_df.columns.tolist()),
+                "threshold_for_target_fpr": 0.4,
+                "target_fpr": 0.02,
+            }
+            joblib.dump(artifact, model_path)
+
+            with self.assertRaises(ValueError):
+                run_inference(
+                    input_path=input_path,
+                    model_path=model_path,
+                    output_path=None,
+                    policy_profile="primary",
+                    approve_threshold=0.7,
+                    decline_threshold=0.6,
+                )
+
+    def test_run_inference_raises_for_missing_required_input_columns(self) -> None:
+        input_df = make_valid_dataframe(rows=2, include_label=False).drop(columns=["V7"])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            input_path = tmp / "input_missing.csv"
+            model_path = tmp / "model.joblib"
+            input_df.to_csv(input_path, index=False)
+            artifact = {
+                "model": StubModel([0.1, 0.2]),
+                "feature_columns": sorted([c for c in input_df.columns]),
+                "threshold_for_target_fpr": 0.4,
+                "target_fpr": 0.02,
+            }
+            joblib.dump(artifact, model_path)
+
+            with self.assertRaises(ValueError):
+                run_inference(
+                    input_path=input_path,
+                    model_path=model_path,
+                    output_path=None,
+                    policy_profile="primary",
+                    approve_threshold=None,
+                    decline_threshold=None,
+                )
 
     def test_load_model_bundle_from_dict_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
