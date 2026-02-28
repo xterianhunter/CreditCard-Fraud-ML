@@ -127,6 +127,17 @@ python3 src/monitoring_snapshot.py \
 This writes:
 - `reports/monitoring_snapshot.md`
 
+## Phase 2: Cost-Based Policy Optimization
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+python3 src/cost_policy_optimization.py \
+  --data-path data/creditcard.csv \
+  --model-path models/week2_best_logreg.joblib
+```
+This writes:
+- `reports/phase2_cost_policy_results.csv`
+- `reports/phase2_cost_policy_report.md`
+
 ## Run Tests
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
