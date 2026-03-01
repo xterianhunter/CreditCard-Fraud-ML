@@ -203,6 +203,13 @@ cd /home/xterianhunter/Projects/Fraud-ML
 python3 -m unittest discover -s tests -v
 ```
 
+## Run Full Local Check
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+make check
+```
+This runs tests, policy validation, smoke checks, promotion gate, and drift check (when dataset is present).
+
 ## Run CI Smoke Checks (Local)
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
@@ -213,6 +220,19 @@ This validates:
 - policy schema compatibility
 - inference smoke scoring on synthetic input
 
+Cleanup:
+```bash
+make ci-clean
+```
+
+## Policy Drift Check (Optional)
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+make policy-drift
+```
+This recomputes the Phase 2 policy (requires dataset) and compares thresholds/guardrails.
+It also writes `reports/policy_drift_report.md`.
+
 ## CI Test Gate
 - GitHub Actions workflow: `.github/workflows/tests.yml`
 - Trigger: push to `main` and pull requests
@@ -220,6 +240,7 @@ This validates:
   - `python -m unittest discover -s tests -v`
   - `make ci-smoke`
   - `make promotion-gate` (only runs gate when dataset is present)
+  - `make policy-drift` (only runs when dataset is present)
 
 ## Release Checklist
 - Unit tests pass.
@@ -253,6 +274,7 @@ Expected artifacts to highlight:
 - `reports/policy_simulation_week3.md`
 - `reports/latency_benchmark_week4.md`
 - `reports/monitoring_snapshot.md`
+- `reports/policy_drift_report.md`
 - `reports/final_phase1_summary.md`
 
 ## Learning + Deployment Focus
@@ -272,5 +294,6 @@ This repo is intended to practice practical deployment-oriented skills, includin
 - Week 3 policy report: `reports/policy_simulation_week3.md`
 - Week 4 latency report: `reports/latency_benchmark_week4.md`
 - Week 4 monitoring snapshot: `reports/monitoring_snapshot.md`
+- Policy drift report: `reports/policy_drift_report.md`
 - Phase 2 operational summary: `reports/phase2_operational_summary.md`
 - Final summary: `reports/final_phase1_summary.md`

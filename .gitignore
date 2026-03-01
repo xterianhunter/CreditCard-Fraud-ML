@@ -2,3 +2,6 @@
 *.zip
 __pycache__/
 *.pyc
+reports/ci_smoke_input.csv
+reports/ci_smoke_output.csv
+reports/policy_drift_report.md
