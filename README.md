@@ -4,16 +4,13 @@
 ## Purpose
 This project is **only for learning and hands-on implementation of ML model deployment tech stacks**.
 
-<p align="center">
-<img src="picture.jpg" width="200" />
-<img src="profile.jpg" width="200" />
-</p>
 
 It is a practice repository to understand:
 - end-to-end fraud model workflow
 - model packaging and threshold-based decisioning
 - deployment-oriented engineering basics (data contracts, reproducibility, evaluation, reporting)
 
+<img src="profile.jpg" width="200" />
 ## Important Disclaimer
 - This is **not** a production fraud system.
 - Metrics and policies here are for educational experimentation.
