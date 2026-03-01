@@ -221,4 +221,5 @@ This repo is intended to practice practical deployment-oriented skills, includin
 - Week 3 policy report: `reports/policy_simulation_week3.md`
 - Week 4 latency report: `reports/latency_benchmark_week4.md`
 - Week 4 monitoring snapshot: `reports/monitoring_snapshot.md`
+- Phase 2 operational summary: `reports/phase2_operational_summary.md`
 - Final summary: `reports/final_phase1_summary.md`
