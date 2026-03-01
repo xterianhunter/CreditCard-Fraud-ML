@@ -1,8 +1,13 @@
 # Fraud-ML (Learning Project)
-<img src="profile.jpg" width="200" />
 
+![Banner](banner.jpg)
 ## Purpose
 This project is **only for learning and hands-on implementation of ML model deployment tech stacks**.
+
+<p align="center">
+<img src="picture.jpg" width="200" />
+<img src="profile.jpg" width="200" />
+</p>
 
 It is a practice repository to understand:
 - end-to-end fraud model workflow
@@ -201,14 +206,23 @@ cd /home/xterianhunter/Projects/Fraud-ML
 python3 -m unittest discover -s tests -v
 ```
 
+## Run CI Smoke Checks (Local)
+```bash
+cd /home/xterianhunter/Projects/Fraud-ML
+make ci-smoke
+```
+This validates:
+- policy status snapshot readability
+- policy schema compatibility
+- inference smoke scoring on synthetic input
+
 ## CI Test Gate
 - GitHub Actions workflow: `.github/workflows/tests.yml`
 - Trigger: push to `main` and pull requests
 - Commands executed in CI:
   - `python -m unittest discover -s tests -v`
-  - `python src/inference.py --policy-config-path models/policy_config.json --policy-profile phase2_guarded --print-policy-status`
-  - inference smoke test on synthetic input with `phase2_guarded` profile
-  - `python src/cost_policy_optimization.py --data-path data/creditcard.csv --require-feasible` (only when dataset is present)
+  - `make ci-smoke`
+  - `make promotion-gate` (only runs gate when dataset is present)
 
 ## Release Checklist
 - Unit tests pass.
