@@ -1,4 +1,5 @@
 # Fraud-ML (Learning Project)
+<img src="profile.jpg" width="200" />
 
 ## Purpose
 This project is **only for learning and hands-on implementation of ML model deployment tech stacks**.
