@@ -26,6 +26,28 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
+      - name: Validate policy status snapshot
+        run: |
+          python src/inference.py \
+            --policy-config-path models/policy_config.json \
+            --policy-profile phase2_guarded \
+            --print-policy-status
+
+      - name: Run inference smoke test (synthetic input)
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          required = ["Time", "Amount"] + [f"V{i}" for i in range(1, 29)]
+          df = pd.DataFrame([{c: 0.0 for c in required}, {c: 1.0 for c in required}])
+          df.to_csv("reports/ci_smoke_input.csv", index=False)
+          PY
+          python src/inference.py \
+            --input-path reports/ci_smoke_input.csv \
+            --model-path models/week2_best_logreg.joblib \
+            --policy-profile phase2_guarded \
+            --policy-config-path models/policy_config.json \
+            --output-path reports/ci_smoke_output.csv
+
       - name: Run policy promotion gate (if dataset available)
         run: |
           if [ -f data/creditcard.csv ]; then

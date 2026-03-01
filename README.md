@@ -96,20 +96,34 @@ python3 src/inference.py \
   --policy-config-path models/policy_config.json \
   --output-path reports/inference_output.csv
 ```
-Default policy profile is `primary` (Week 3 selected thresholds: `T1=0.1100`, `T2=0.4500`).
+Default policy profile is `phase2_guarded` (current operational default: `T1=0.2000`, `T2=0.8000`).
 
 Optional profile switch:
 ```bash
 python3 src/inference.py \
   --input-path data/creditcard.csv \
   --model-path models/week2_best_logreg.joblib \
-  --policy-profile fallback
+  --policy-profile primary
 ```
 Supported profiles:
-- `primary`: `T1=0.1100`, `T2=0.4500`
-- `fallback`: `T1=0.1900`, `T2=0.8000`
 - `phase2_guarded`: `T1=0.2000`, `T2=0.8000`
+- `fallback`: `T1=0.1900`, `T2=0.8000`
+- `primary`: `T1=0.1100`, `T2=0.4500`
 - `artifact`: uses threshold from model artifact metadata when available
+
+Rollout strategy:
+- Use `phase2_guarded` for normal operations (current default).
+- Switch to `fallback` during review-capacity pressure.
+- Use `primary` for Week 3 comparability/backtesting checks.
+- Keep `artifact` for experiments tied to model-bundle threshold metadata.
+
+Policy status check:
+```bash
+python3 src/inference.py \
+  --policy-config-path models/policy_config.json \
+  --policy-profile phase2_guarded \
+  --print-policy-status
+```
 
 ## Run Week 4 Latency Benchmark
 ```bash
@@ -141,6 +155,10 @@ This writes:
 - `reports/phase2_cost_policy_report.md`
 - `models/policy_config.json`
 
+Policy artifact contract:
+- `models/policy_config.json` must include `schema_version=1`.
+- Inference will fail fast on unsupported schema versions.
+
 Default guardrails:
 - `max_review_rate=10%`
 - `min_flagged_fraud_capture=85%`
@@ -164,6 +182,19 @@ python3 src/cost_policy_optimization.py \
 ```
 This command exits non-zero when no guardrail-feasible policy is found.
 
+## Runbook (Ops)
+- If schema/version fails:
+  - Regenerate policy artifact:
+    - `python3 src/cost_policy_optimization.py --data-path data/creditcard.csv --policy-out-path models/policy_config.json`
+  - Re-run policy status check and verify `schema_version=1`.
+- If no feasible policy is found:
+  - Run optimizer without `--require-feasible` to inspect soft-fail candidate metrics.
+  - Temporarily keep serving with last known-good `models/policy_config.json`.
+  - Revisit guardrails/grid/methods before promotion.
+- When to switch to fallback:
+  - Use `--policy-profile fallback` when review queue capacity is constrained or review backlog spikes.
+  - Return to `phase2_guarded` after queue pressure stabilizes.
+
 ## Run Tests
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
@@ -173,8 +204,17 @@ python3 -m unittest discover -s tests -v
 ## CI Test Gate
 - GitHub Actions workflow: `.github/workflows/tests.yml`
 - Trigger: push to `main` and pull requests
-- Command executed in CI:
+- Commands executed in CI:
   - `python -m unittest discover -s tests -v`
+  - `python src/inference.py --policy-config-path models/policy_config.json --policy-profile phase2_guarded --print-policy-status`
+  - inference smoke test on synthetic input with `phase2_guarded` profile
+  - `python src/cost_policy_optimization.py --data-path data/creditcard.csv --require-feasible` (only when dataset is present)
+
+## Release Checklist
+- Unit tests pass.
+- Policy status check passes (`schema_version`, profile thresholds, guardrail metadata visible).
+- Inference smoke test passes (synthetic input -> scored output).
+- Promotion gate passes when dataset is available.
 
 ## 5-Minute Demo Walkthrough
 ```bash
@@ -189,8 +229,8 @@ python3 src/experiment_scaled_logreg.py --data-path data/creditcard.csv
 # 3) Week 3 policy simulation
 python3 src/policy_simulation.py --data-path data/creditcard.csv --model-path models/week2_best_logreg.joblib
 
-# 4) Inference with final primary policy
-python3 src/inference.py --input-path data/creditcard.csv --model-path models/week2_best_logreg.joblib --policy-profile primary --output-path reports/inference_output.csv
+# 4) Inference with operational default policy (phase2_guarded)
+python3 src/inference.py --input-path data/creditcard.csv --model-path models/week2_best_logreg.joblib --policy-profile phase2_guarded --policy-config-path models/policy_config.json --output-path reports/inference_output.csv
 
 # 5) Week 4 operational checks
 python3 src/latency_benchmark.py --data-path data/creditcard.csv --model-path models/week2_best_logreg.joblib

@@ -23,6 +23,8 @@ PolicyProfile = Literal["primary", "fallback", "phase2_guarded", "artifact"]
 
 DEFAULT_POLICY_CONFIG_PATH = Path("models/policy_config.json")
 DEFAULT_ARTIFACT_DECLINE_FALLBACK = 0.45
+SUPPORTED_POLICY_SCHEMA_VERSION = 1
+DEFAULT_POLICY_PROFILE: PolicyProfile = "phase2_guarded"
 
 
 @dataclass
@@ -92,8 +94,8 @@ def validate_thresholds(approve_threshold: float, decline_threshold: float) -> N
         )
 
 
-def load_policy_profiles(policy_config_path: Path) -> dict[str, tuple[float, float]]:
-    """Load policy profile thresholds from json config."""
+def load_policy_config_payload(policy_config_path: Path) -> dict[str, Any]:
+    """Load and validate policy config payload."""
     if not policy_config_path.exists():
         raise FileNotFoundError(
             f"Policy config not found: {policy_config_path}. "
@@ -101,6 +103,23 @@ def load_policy_profiles(policy_config_path: Path) -> dict[str, tuple[float, flo
         )
 
     payload = json.loads(policy_config_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid policy config: root must be a JSON object.")
+
+    schema_version = payload.get("schema_version")
+    if not isinstance(schema_version, int):
+        raise ValueError("Invalid policy config: `schema_version` must be an integer.")
+    if schema_version != SUPPORTED_POLICY_SCHEMA_VERSION:
+        raise ValueError(
+            f"Unsupported policy config schema_version={schema_version}; "
+            f"supported={SUPPORTED_POLICY_SCHEMA_VERSION}."
+        )
+    return payload
+
+
+def load_policy_profiles(policy_config_path: Path) -> dict[str, tuple[float, float]]:
+    """Load policy profile thresholds from json config."""
+    payload = load_policy_config_payload(policy_config_path)
     profiles_obj = payload.get("profiles")
     if not isinstance(profiles_obj, dict):
         raise ValueError("Invalid policy config: missing object field `profiles`.")
@@ -118,6 +137,96 @@ def load_policy_profiles(policy_config_path: Path) -> dict[str, tuple[float, flo
         validate_thresholds(approve, decline)
         profiles[str(profile_name)] = (approve, decline)
     return profiles
+
+
+def policy_status_snapshot(
+    *,
+    policy_config_path: Path,
+    policy_profile: PolicyProfile,
+) -> dict[str, Any]:
+    """Build policy status snapshot for operational diagnostics."""
+    payload = load_policy_config_payload(policy_config_path)
+    profiles = load_policy_profiles(policy_config_path)
+
+    snapshot: dict[str, Any] = {
+        "policy_config_path": str(policy_config_path),
+        "schema_version": payload["schema_version"],
+        "generated_at": payload.get("generated_at"),
+        "default_policy_profile": DEFAULT_POLICY_PROFILE,
+        "selected_policy_profile": policy_profile,
+        "available_profiles": sorted(profiles.keys()),
+    }
+
+    guardrails = payload.get("guardrails")
+    if isinstance(guardrails, dict):
+        snapshot["guardrails"] = guardrails
+
+    if policy_profile == "artifact":
+        snapshot["selected_profile_thresholds"] = "artifact_model_metadata"
+        snapshot["note"] = (
+            "artifact profile resolves thresholds from model artifact "
+            "(`threshold_for_target_fpr`) at inference time."
+        )
+        return snapshot
+
+    if policy_profile not in profiles:
+        raise ValueError(
+            f"Selected policy profile `{policy_profile}` not found in policy config."
+        )
+
+    approve, decline = profiles[policy_profile]
+    snapshot["selected_profile_thresholds"] = {
+        "approve_threshold": float(approve),
+        "decline_threshold": float(decline),
+    }
+
+    profiles_obj = payload.get("profiles")
+    profile_raw = profiles_obj.get(policy_profile) if isinstance(profiles_obj, dict) else None
+    if isinstance(profile_raw, dict):
+        metadata_keys = [
+            "source",
+            "calibration_method",
+            "meets_guardrails",
+            "review_rate",
+            "decline_fpr",
+            "flagged_fraud_capture",
+            "total_cost",
+            "cost_per_row",
+        ]
+        metadata = {k: profile_raw[k] for k in metadata_keys if k in profile_raw}
+        if metadata:
+            snapshot["selected_profile_metadata"] = metadata
+    return snapshot
+
+
+def build_policy_status_text(snapshot: dict[str, Any]) -> str:
+    """Render policy snapshot as readable text."""
+    lines = [
+        "=== Policy Status ===",
+        f"Policy config: {snapshot['policy_config_path']}",
+        f"Schema version: {snapshot['schema_version']}",
+        f"Generated at: {snapshot.get('generated_at')}",
+        f"Default profile: {snapshot['default_policy_profile']}",
+        f"Selected profile: {snapshot['selected_policy_profile']}",
+        f"Available profiles: {snapshot['available_profiles']}",
+    ]
+
+    guardrails = snapshot.get("guardrails")
+    if isinstance(guardrails, dict):
+        lines.append(f"Guardrails: {guardrails}")
+
+    selected_thresholds = snapshot.get("selected_profile_thresholds")
+    lines.append(f"Selected thresholds: {selected_thresholds}")
+
+    selected_metadata = snapshot.get("selected_profile_metadata")
+    if isinstance(selected_metadata, dict):
+        lines.append(f"Selected metadata: {selected_metadata}")
+
+    note = snapshot.get("note")
+    if note is not None:
+        lines.append(f"Note: {note}")
+
+    return "\n".join(lines)
 
 
 def resolve_profile_thresholds(
@@ -179,7 +288,7 @@ def run_inference(
     output_path: Path | None,
     approve_threshold: float | None,
     decline_threshold: float | None,
-    policy_profile: PolicyProfile = "primary",
+    policy_profile: PolicyProfile = DEFAULT_POLICY_PROFILE,
     policy_config_path: Path = DEFAULT_POLICY_CONFIG_PATH,
 ) -> tuple[pd.DataFrame, float, float]:
     """Load data + model and return scored output with resolved thresholds."""
@@ -228,7 +337,7 @@ def run_inference(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-path", type=Path, required=True, help="CSV input to score.")
+    parser.add_argument("--input-path", type=Path, required=False, help="CSV input to score.")
     parser.add_argument(
         "--model-path",
         type=Path,
@@ -239,7 +348,7 @@ def main() -> None:
     parser.add_argument(
         "--policy-profile",
         choices=["primary", "fallback", "phase2_guarded", "artifact"],
-        default="primary",
+        default=DEFAULT_POLICY_PROFILE,
         help="Default threshold profile when explicit thresholds are not provided.",
     )
     parser.add_argument("--approve-threshold", type=float, default=None, help="Approve upper bound.")
@@ -250,7 +359,24 @@ def main() -> None:
         default=DEFAULT_POLICY_CONFIG_PATH,
         help="Path to policy configuration json.",
     )
+    parser.add_argument(
+        "--print-policy-status",
+        action="store_true",
+        help="Print loaded policy config details and selected profile thresholds.",
+    )
     args = parser.parse_args()
+
+    if args.print_policy_status:
+        snapshot = policy_status_snapshot(
+            policy_config_path=args.policy_config_path,
+            policy_profile=args.policy_profile,
+        )
+        print(build_policy_status_text(snapshot))
+        if args.input_path is None:
+            return
+
+    if args.input_path is None:
+        parser.error("--input-path is required unless --print-policy-status is used.")
 
     scored_df, approve_threshold, decline_threshold = run_inference(
         input_path=args.input_path,
