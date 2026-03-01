@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-03-01",
+  "guardrails": {
+    "max_decline_fpr": 0.02,
+    "max_review_rate": 0.1,
+    "min_flagged_fraud_capture": 0.85
+  },
+  "profiles": {
+    "fallback": {
+      "approve_threshold": 0.19,
+      "decline_threshold": 0.8,
+      "source": "week3"
+    },
+    "phase2_guarded": {
+      "approve_threshold": 0.2,
+      "calibration_method": "none",
+      "cost_per_row": 0.03995646220287209,
+      "decline_fpr": 0.003338135563442145,
+      "decline_threshold": 0.8,
+      "flagged_fraud_capture": 0.8636363636363636,
+      "meets_guardrails": true,
+      "review_rate": 0.05161335627260279,
+      "source": "phase2_optimization",
+      "total_cost": 1138.0
+    },
+    "primary": {
+      "approve_threshold": 0.11,
+      "decline_threshold": 0.45,
+      "source": "week3"
+    }
+  },
+  "schema_version": 1,
+  "source": {
+    "grid_step": 0.01,
+    "methods_evaluated": [
+      "none",
+      "platt",
+      "isotonic"
+    ],
+    "model_path": "models/week2_best_logreg.joblib",
+    "optimizer": "src/cost_policy_optimization.py"
+  }
+}

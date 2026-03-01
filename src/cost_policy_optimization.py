@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import date
 from pathlib import Path
 
@@ -18,6 +19,12 @@ from sklearn.linear_model import LogisticRegression
 from data_contract import LABEL_COLUMN
 from inference import load_model_bundle, resolve_feature_columns, validate_thresholds
 from train_baseline import load_data, split_train_test
+
+
+DEFAULT_PRIMARY_APPROVE_THRESHOLD = 0.11
+DEFAULT_PRIMARY_DECLINE_THRESHOLD = 0.45
+DEFAULT_FALLBACK_APPROVE_THRESHOLD = 0.19
+DEFAULT_FALLBACK_DECLINE_THRESHOLD = 0.80
 
 
 def parse_methods(raw: str) -> list[str]:
@@ -192,6 +199,141 @@ def search_best_policy(
     return ranked.iloc[0], ranked
 
 
+def validate_guardrails(
+    *,
+    max_review_rate: float,
+    min_flagged_fraud_capture: float,
+    max_decline_fpr: float,
+) -> None:
+    for name, value in [
+        ("max_review_rate", max_review_rate),
+        ("min_flagged_fraud_capture", min_flagged_fraud_capture),
+        ("max_decline_fpr", max_decline_fpr),
+    ]:
+        if not (0.0 <= value <= 1.0):
+            raise ValueError(f"{name} must be in [0, 1], got {value}.")
+
+
+def enforce_promotion_gate(*, require_feasible: bool, recommended_feasible: bool) -> None:
+    if require_feasible and not recommended_feasible:
+        raise SystemExit(
+            "Promotion gate failed: no guardrail-feasible policy found for evaluated methods."
+        )
+
+
+def build_policy_config_payload(
+    *,
+    best_method_row: pd.Series,
+    recommended_feasible: bool,
+    model_path: Path,
+    methods: list[str],
+    max_review_rate: float,
+    min_flagged_fraud_capture: float,
+    max_decline_fpr: float,
+    grid_step: float,
+) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "generated_at": date.today().isoformat(),
+        "source": {
+            "optimizer": "src/cost_policy_optimization.py",
+            "model_path": str(model_path),
+            "methods_evaluated": methods,
+            "grid_step": float(grid_step),
+        },
+        "guardrails": {
+            "max_review_rate": float(max_review_rate),
+            "min_flagged_fraud_capture": float(min_flagged_fraud_capture),
+            "max_decline_fpr": float(max_decline_fpr),
+        },
+        "profiles": {
+            "primary": {
+                "approve_threshold": float(DEFAULT_PRIMARY_APPROVE_THRESHOLD),
+                "decline_threshold": float(DEFAULT_PRIMARY_DECLINE_THRESHOLD),
+                "source": "week3",
+            },
+            "fallback": {
+                "approve_threshold": float(DEFAULT_FALLBACK_APPROVE_THRESHOLD),
+                "decline_threshold": float(DEFAULT_FALLBACK_DECLINE_THRESHOLD),
+                "source": "week3",
+            },
+            "phase2_guarded": {
+                "approve_threshold": float(best_method_row["approve_threshold"]),
+                "decline_threshold": float(best_method_row["decline_threshold"]),
+                "source": "phase2_optimization",
+                "calibration_method": str(best_method_row["method"]),
+                "meets_guardrails": bool(recommended_feasible),
+                "review_rate": float(best_method_row["review_rate"]),
+                "decline_fpr": float(best_method_row["decline_fpr"]),
+                "flagged_fraud_capture": float(best_method_row["flagged_fraud_capture"]),
+                "total_cost": float(best_method_row["total_cost"]),
+                "cost_per_row": float(best_method_row["cost_per_row"]),
+            },
+        },
+    }
+
+
+def write_policy_config(policy_out_path: Path, payload: dict[str, object]) -> None:
+    policy_out_path.parent.mkdir(parents=True, exist_ok=True)
+    policy_out_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def annotate_guardrails(
+    ranked: pd.DataFrame,
+    *,
+    max_review_rate: float,
+    min_flagged_fraud_capture: float,
+    max_decline_fpr: float,
+) -> pd.DataFrame:
+    out = ranked.copy()
+    out["meets_guardrails"] = (
+        (out["review_rate"] <= max_review_rate)
+        & (out["flagged_fraud_capture"] >= min_flagged_fraud_capture)
+        & (out["decline_fpr"] <= max_decline_fpr)
+    )
+    out["review_violation"] = np.maximum(0.0, out["review_rate"] - max_review_rate)
+    out["capture_violation"] = np.maximum(0.0, min_flagged_fraud_capture - out["flagged_fraud_capture"])
+    out["decline_fpr_violation"] = np.maximum(0.0, out["decline_fpr"] - max_decline_fpr)
+    out["violation_score"] = (
+        out["capture_violation"] * 2.0
+        + out["review_violation"] * 1.0
+        + out["decline_fpr_violation"] * 1.5
+    )
+    return out
+
+
+def select_recommended_policy(
+    ranked: pd.DataFrame,
+    *,
+    max_review_rate: float,
+    min_flagged_fraud_capture: float,
+    max_decline_fpr: float,
+) -> tuple[pd.Series, bool, pd.DataFrame]:
+    annotated = annotate_guardrails(
+        ranked,
+        max_review_rate=max_review_rate,
+        min_flagged_fraud_capture=min_flagged_fraud_capture,
+        max_decline_fpr=max_decline_fpr,
+    )
+
+    feasible = annotated[annotated["meets_guardrails"]]
+    if not feasible.empty:
+        selected = feasible.sort_values(
+            by=["total_cost", "flagged_fraud_capture", "review_rate", "decline_fpr"],
+            ascending=[True, False, True, True],
+        ).iloc[0]
+        return selected, True, annotated
+
+    soft_best = annotated.sort_values(
+        by=["violation_score", "total_cost", "flagged_fraud_capture", "review_rate", "decline_fpr"],
+        ascending=[True, True, False, True, True],
+    ).iloc[0]
+    return soft_best, False, annotated
+
+
 def build_markdown_report(
     *,
     train_rows: int,
@@ -204,6 +346,10 @@ def build_markdown_report(
     cost_false_negative: float,
     cost_false_decline: float,
     cost_review: float,
+    max_review_rate: float,
+    min_flagged_fraud_capture: float,
+    max_decline_fpr: float,
+    recommended_feasible: bool,
 ) -> str:
     lines = [
         "# Phase 2: Calibration + Cost-Based Policy Optimization",
@@ -221,16 +367,22 @@ def build_markdown_report(
         f"- Cost(false decline non-fraud): {cost_false_decline:.3f}",
         f"- Cost(per review): {cost_review:.3f}",
         "",
+        "## Guardrails",
+        f"- Max review rate: {max_review_rate:.2%}",
+        f"- Min flagged fraud capture: {min_flagged_fraud_capture:.2%}",
+        f"- Max decline FPR: {max_decline_fpr:.2%}",
+        "",
         "## Best Policy By Calibration Method",
         "",
-        "| Method | T1 | T2 | Total Cost | Cost/Row | Review% | Decline FPR | Flagged Fraud Capture |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Method | Guardrails | T1 | T2 | Total Cost | Cost/Row | Review% | Decline FPR | Flagged Fraud Capture |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
 
     for _, row in methods_summary.iterrows():
         lines.append(
-            "| {method} | {t1:.4f} | {t2:.4f} | {total:.4f} | {cpr:.6f} | {review:.2%} | {fpr:.2%} | {capture:.2%} |".format(
+            "| {method} | {guardrail} | {t1:.4f} | {t2:.4f} | {total:.4f} | {cpr:.6f} | {review:.2%} | {fpr:.2%} | {capture:.2%} |".format(
                 method=row["method"],
+                guardrail="PASS" if bool(row["meets_guardrails"]) else "SOFT FAIL",
                 t1=float(row["approve_threshold"]),
                 t2=float(row["decline_threshold"]),
                 total=float(row["total_cost"]),
@@ -246,6 +398,7 @@ def build_markdown_report(
             "",
             "## Recommended Policy",
             f"- Calibration method: `{best_method_row['method']}`",
+            f"- Guardrail status: {'PASS' if recommended_feasible else 'SOFT FAIL (best available tradeoff)'}",
             f"- `approve`: score < {float(best_method_row['approve_threshold']):.4f}",
             f"- `review`: {float(best_method_row['approve_threshold']):.4f} <= score < {float(best_method_row['decline_threshold']):.4f}",
             f"- `decline`: score >= {float(best_method_row['decline_threshold']):.4f}",
@@ -256,6 +409,15 @@ def build_markdown_report(
             f"- Cost per row: {float(best_method_row['cost_per_row']):.6f}",
         ]
     )
+    if not recommended_feasible:
+        lines.extend(
+            [
+                "",
+                "## Note",
+                "- No threshold pair satisfied all guardrails for the selected method set and grid.",
+                "- Recommendation uses lowest weighted guardrail violation before total cost.",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -274,6 +436,20 @@ def main() -> None:
     parser.add_argument("--cost-false-negative", type=float, default=25.0)
     parser.add_argument("--cost-false-decline", type=float, default=5.0)
     parser.add_argument("--cost-review", type=float, default=0.4)
+    parser.add_argument("--max-review-rate", type=float, default=0.10)
+    parser.add_argument("--min-flagged-fraud-capture", type=float, default=0.85)
+    parser.add_argument("--max-decline-fpr", type=float, default=0.02)
+    parser.add_argument(
+        "--require-feasible",
+        action="store_true",
+        help="Exit non-zero if no guardrail-feasible policy is found.",
+    )
+    parser.add_argument(
+        "--policy-out-path",
+        type=Path,
+        default=Path("models/policy_config.json"),
+        help="Path to write policy configuration json.",
+    )
     parser.add_argument(
         "--results-out-path",
         type=Path,
@@ -287,6 +463,11 @@ def main() -> None:
     args = parser.parse_args()
 
     methods = parse_methods(args.methods)
+    validate_guardrails(
+        max_review_rate=args.max_review_rate,
+        min_flagged_fraud_capture=args.min_flagged_fraud_capture,
+        max_decline_fpr=args.max_decline_fpr,
+    )
     threshold_pairs = generate_threshold_grid(
         t1_min=args.t1_min,
         t1_max=args.t1_max,
@@ -319,7 +500,7 @@ def main() -> None:
             calibration_labels=y_cal,
             evaluation_scores=evaluation_scores_raw,
         )
-        best, ranked = search_best_policy(
+        _, ranked = search_best_policy(
             y_true=y_eval,
             y_score=eval_scores,
             threshold_pairs=threshold_pairs,
@@ -327,19 +508,27 @@ def main() -> None:
             cost_false_decline=args.cost_false_decline,
             cost_review=args.cost_review,
         )
+        best, feasible, ranked_with_guardrails = select_recommended_policy(
+            ranked,
+            max_review_rate=args.max_review_rate,
+            min_flagged_fraud_capture=args.min_flagged_fraud_capture,
+            max_decline_fpr=args.max_decline_fpr,
+        )
         best = best.copy()
         best["method"] = method
+        best["meets_guardrails"] = bool(feasible)
         method_rows.append(best)
 
-        ranked = ranked.copy()
-        ranked["method"] = method
-        detailed_rows.append(ranked)
+        ranked_with_guardrails = ranked_with_guardrails.copy()
+        ranked_with_guardrails["method"] = method
+        detailed_rows.append(ranked_with_guardrails)
 
     methods_summary = pd.DataFrame(method_rows).sort_values(
-        by=["total_cost", "flagged_fraud_capture", "review_rate", "decline_fpr"],
-        ascending=[True, False, True, True],
+        by=["meets_guardrails", "total_cost", "flagged_fraud_capture", "review_rate", "decline_fpr"],
+        ascending=[False, True, False, True, True],
     ).reset_index(drop=True)
     best_method_row = methods_summary.iloc[0]
+    recommended_feasible = bool(best_method_row["meets_guardrails"])
 
     full_results = pd.concat(detailed_rows, ignore_index=True)
     args.results_out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -356,9 +545,25 @@ def main() -> None:
         cost_false_negative=args.cost_false_negative,
         cost_false_decline=args.cost_false_decline,
         cost_review=args.cost_review,
+        max_review_rate=args.max_review_rate,
+        min_flagged_fraud_capture=args.min_flagged_fraud_capture,
+        max_decline_fpr=args.max_decline_fpr,
+        recommended_feasible=recommended_feasible,
     )
     args.report_out_path.parent.mkdir(parents=True, exist_ok=True)
     args.report_out_path.write_text(report, encoding="utf-8")
+
+    policy_payload = build_policy_config_payload(
+        best_method_row=best_method_row,
+        recommended_feasible=recommended_feasible,
+        model_path=args.model_path,
+        methods=methods,
+        max_review_rate=args.max_review_rate,
+        min_flagged_fraud_capture=args.min_flagged_fraud_capture,
+        max_decline_fpr=args.max_decline_fpr,
+        grid_step=args.grid_step,
+    )
+    write_policy_config(args.policy_out_path, policy_payload)
 
     print("=== Phase 2 Cost Policy Optimization Summary ===")
     print(f"Methods evaluated: {methods}")
@@ -368,10 +573,21 @@ def main() -> None:
         "Best T1/T2: "
         f"{float(best_method_row['approve_threshold']):.4f}/{float(best_method_row['decline_threshold']):.4f}"
     )
+    print(
+        "Guardrail status: "
+        f"{'PASS' if recommended_feasible else 'SOFT FAIL (best available tradeoff)'}"
+    )
     print(f"Best total cost: {float(best_method_row['total_cost']):.4f}")
     print(f"Best cost/row: {float(best_method_row['cost_per_row']):.6f}")
     print(f"Wrote detailed results: {args.results_out_path}")
     print(f"Wrote report: {args.report_out_path}")
+    print(f"Wrote policy config: {args.policy_out_path}")
+    if args.require_feasible:
+        enforce_promotion_gate(
+            require_feasible=True,
+            recommended_feasible=recommended_feasible,
+        )
+        print("Promotion gate: PASS")
 
 
 if __name__ == "__main__":

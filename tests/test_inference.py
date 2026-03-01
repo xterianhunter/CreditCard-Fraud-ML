@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 import joblib
@@ -39,6 +40,18 @@ def make_valid_dataframe(rows: int = 4, include_label: bool = False) -> pd.DataF
     return pd.DataFrame(data)
 
 
+def write_policy_config(path: Path) -> None:
+    payload = {
+        "version": "2026-03-01",
+        "profiles": {
+            "primary": {"approve_threshold": 0.11, "decline_threshold": 0.45},
+            "fallback": {"approve_threshold": 0.19, "decline_threshold": 0.80},
+            "phase2_guarded": {"approve_threshold": 0.20, "decline_threshold": 0.80},
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 class InferenceTests(unittest.TestCase):
     def test_score_with_policy_assigns_expected_decisions(self) -> None:
         df = make_valid_dataframe(rows=4, include_label=False)
@@ -70,7 +83,9 @@ class InferenceTests(unittest.TestCase):
             input_path = tmp / "input.csv"
             model_path = tmp / "model.joblib"
             output_path = tmp / "output.csv"
+            policy_config_path = tmp / "policy_config.json"
             input_df.to_csv(input_path, index=False)
+            write_policy_config(policy_config_path)
 
             artifact = {
                 "model": StubModel([0.02, 0.15, 0.85]),
@@ -87,6 +102,7 @@ class InferenceTests(unittest.TestCase):
                 policy_profile="artifact",
                 approve_threshold=0.1,
                 decline_threshold=None,
+                policy_config_path=policy_config_path,
             )
 
             self.assertTrue(output_path.exists())
@@ -102,7 +118,9 @@ class InferenceTests(unittest.TestCase):
             tmp = Path(tmpdir)
             input_path = tmp / "input.csv"
             model_path = tmp / "model.joblib"
+            policy_config_path = tmp / "policy_config.json"
             input_df.to_csv(input_path, index=False)
+            write_policy_config(policy_config_path)
             artifact = {
                 "model": StubModel([0.05, 0.15, 0.85]),
                 "feature_columns": sorted(input_df.columns.tolist()),
@@ -118,6 +136,7 @@ class InferenceTests(unittest.TestCase):
                 policy_profile="primary",
                 approve_threshold=None,
                 decline_threshold=None,
+                policy_config_path=policy_config_path,
             )
 
             self.assertAlmostEqual(approve_t, 0.11)
@@ -130,7 +149,9 @@ class InferenceTests(unittest.TestCase):
             tmp = Path(tmpdir)
             input_path = tmp / "input.csv"
             model_path = tmp / "model.joblib"
+            policy_config_path = tmp / "policy_config.json"
             input_df.to_csv(input_path, index=False)
+            write_policy_config(policy_config_path)
             artifact = {
                 "model": StubModel([0.05, 0.15, 0.85]),
                 "feature_columns": sorted(input_df.columns.tolist()),
@@ -146,11 +167,43 @@ class InferenceTests(unittest.TestCase):
                 policy_profile="fallback",
                 approve_threshold=None,
                 decline_threshold=None,
+                policy_config_path=policy_config_path,
             )
 
             self.assertAlmostEqual(approve_t, 0.19)
             self.assertAlmostEqual(decline_t, 0.80)
             self.assertListEqual(scored_df["decision"].tolist(), ["approve", "approve", "decline"])
+
+    def test_run_inference_phase2_guarded_profile_defaults(self) -> None:
+        input_df = make_valid_dataframe(rows=3, include_label=False)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            input_path = tmp / "input.csv"
+            model_path = tmp / "model.joblib"
+            policy_config_path = tmp / "policy_config.json"
+            input_df.to_csv(input_path, index=False)
+            write_policy_config(policy_config_path)
+            artifact = {
+                "model": StubModel([0.05, 0.25, 0.85]),
+                "feature_columns": sorted(input_df.columns.tolist()),
+                "threshold_for_target_fpr": 0.4,
+                "target_fpr": 0.02,
+            }
+            joblib.dump(artifact, model_path)
+
+            scored_df, approve_t, decline_t = run_inference(
+                input_path=input_path,
+                model_path=model_path,
+                output_path=None,
+                policy_profile="phase2_guarded",
+                approve_threshold=None,
+                decline_threshold=None,
+                policy_config_path=policy_config_path,
+            )
+
+            self.assertAlmostEqual(approve_t, 0.20)
+            self.assertAlmostEqual(decline_t, 0.80)
+            self.assertListEqual(scored_df["decision"].tolist(), ["approve", "review", "decline"])
 
     def test_run_inference_raises_for_invalid_threshold_order(self) -> None:
         input_df = make_valid_dataframe(rows=2, include_label=False)
@@ -158,7 +211,9 @@ class InferenceTests(unittest.TestCase):
             tmp = Path(tmpdir)
             input_path = tmp / "input.csv"
             model_path = tmp / "model.joblib"
+            policy_config_path = tmp / "policy_config.json"
             input_df.to_csv(input_path, index=False)
+            write_policy_config(policy_config_path)
             artifact = {
                 "model": StubModel([0.2, 0.8]),
                 "feature_columns": sorted(input_df.columns.tolist()),
@@ -175,6 +230,7 @@ class InferenceTests(unittest.TestCase):
                     policy_profile="primary",
                     approve_threshold=0.7,
                     decline_threshold=0.6,
+                    policy_config_path=policy_config_path,
                 )
 
     def test_run_inference_raises_for_missing_required_input_columns(self) -> None:
@@ -183,7 +239,9 @@ class InferenceTests(unittest.TestCase):
             tmp = Path(tmpdir)
             input_path = tmp / "input_missing.csv"
             model_path = tmp / "model.joblib"
+            policy_config_path = tmp / "policy_config.json"
             input_df.to_csv(input_path, index=False)
+            write_policy_config(policy_config_path)
             artifact = {
                 "model": StubModel([0.1, 0.2]),
                 "feature_columns": sorted([c for c in input_df.columns]),
@@ -200,6 +258,7 @@ class InferenceTests(unittest.TestCase):
                     policy_profile="primary",
                     approve_threshold=None,
                     decline_threshold=None,
+                    policy_config_path=policy_config_path,
                 )
 
     def test_load_model_bundle_from_dict_artifact(self) -> None:

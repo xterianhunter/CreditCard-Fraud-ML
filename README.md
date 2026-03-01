@@ -92,6 +92,7 @@ cd /home/xterianhunter/Projects/Fraud-ML
 python3 src/inference.py \
   --input-path data/creditcard.csv \
   --model-path models/week2_best_logreg.joblib \
+  --policy-config-path models/policy_config.json \
   --output-path reports/inference_output.csv
 ```
 Default policy profile is `primary` (Week 3 selected thresholds: `T1=0.1100`, `T2=0.4500`).
@@ -106,6 +107,7 @@ python3 src/inference.py \
 Supported profiles:
 - `primary`: `T1=0.1100`, `T2=0.4500`
 - `fallback`: `T1=0.1900`, `T2=0.8000`
+- `phase2_guarded`: `T1=0.2000`, `T2=0.8000`
 - `artifact`: uses threshold from model artifact metadata when available
 
 ## Run Week 4 Latency Benchmark
@@ -131,12 +133,35 @@ This writes:
 ```bash
 cd /home/xterianhunter/Projects/Fraud-ML
 python3 src/cost_policy_optimization.py \
-  --data-path data/creditcard.csv \
-  --model-path models/week2_best_logreg.joblib
+  --data-path data/creditcard.csv
 ```
 This writes:
 - `reports/phase2_cost_policy_results.csv`
 - `reports/phase2_cost_policy_report.md`
+- `models/policy_config.json`
+
+Default guardrails:
+- `max_review_rate=10%`
+- `min_flagged_fraud_capture=85%`
+- `max_decline_fpr=2%`
+
+Optional override example:
+```bash
+python3 src/cost_policy_optimization.py \
+  --data-path data/creditcard.csv \
+  --max-review-rate 0.08 \
+  --min-flagged-fraud-capture 0.90 \
+  --max-decline-fpr 0.015 \
+  --policy-out-path models/policy_config.json
+```
+
+Promotion gate example (CI/CD):
+```bash
+python3 src/cost_policy_optimization.py \
+  --data-path data/creditcard.csv \
+  --require-feasible
+```
+This command exits non-zero when no guardrail-feasible policy is found.
 
 ## Run Tests
 ```bash

@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -18,15 +19,10 @@ import pandas as pd
 from data_contract import feature_columns, validate_dataframe
 
 
-PolicyProfile = Literal["primary", "fallback", "artifact"]
+PolicyProfile = Literal["primary", "fallback", "phase2_guarded", "artifact"]
 
-# Week 3 selected primary policy (default for production-like scoring).
-DEFAULT_APPROVE_THRESHOLD = 0.11
-DEFAULT_DECLINE_THRESHOLD = 0.45
-
-# Capacity-protecting fallback profile from Week 3.
-FALLBACK_APPROVE_THRESHOLD = 0.19
-FALLBACK_DECLINE_THRESHOLD = 0.80
+DEFAULT_POLICY_CONFIG_PATH = Path("models/policy_config.json")
+DEFAULT_ARTIFACT_DECLINE_FALLBACK = 0.45
 
 
 @dataclass
@@ -96,25 +92,57 @@ def validate_thresholds(approve_threshold: float, decline_threshold: float) -> N
         )
 
 
+def load_policy_profiles(policy_config_path: Path) -> dict[str, tuple[float, float]]:
+    """Load policy profile thresholds from json config."""
+    if not policy_config_path.exists():
+        raise FileNotFoundError(
+            f"Policy config not found: {policy_config_path}. "
+            "Run src/cost_policy_optimization.py to generate it."
+        )
+
+    payload = json.loads(policy_config_path.read_text(encoding="utf-8"))
+    profiles_obj = payload.get("profiles")
+    if not isinstance(profiles_obj, dict):
+        raise ValueError("Invalid policy config: missing object field `profiles`.")
+
+    profiles: dict[str, tuple[float, float]] = {}
+    for profile_name, thresholds in profiles_obj.items():
+        if not isinstance(thresholds, dict):
+            raise ValueError(f"Invalid policy config: profile `{profile_name}` must be an object.")
+        if "approve_threshold" not in thresholds or "decline_threshold" not in thresholds:
+            raise ValueError(
+                f"Invalid policy config: profile `{profile_name}` missing thresholds."
+            )
+        approve = float(thresholds["approve_threshold"])
+        decline = float(thresholds["decline_threshold"])
+        validate_thresholds(approve, decline)
+        profiles[str(profile_name)] = (approve, decline)
+    return profiles
+
+
 def resolve_profile_thresholds(
     *,
     policy_profile: PolicyProfile,
     artifact_decline_threshold: float | None,
+    policy_profiles: dict[str, tuple[float, float]] | None,
 ) -> tuple[float, float]:
     """Return default threshold pair for a policy profile."""
-    if policy_profile == "primary":
-        return DEFAULT_APPROVE_THRESHOLD, DEFAULT_DECLINE_THRESHOLD
-    if policy_profile == "fallback":
-        return FALLBACK_APPROVE_THRESHOLD, FALLBACK_DECLINE_THRESHOLD
     if policy_profile == "artifact":
         decline = (
             float(artifact_decline_threshold)
             if artifact_decline_threshold is not None
-            else DEFAULT_DECLINE_THRESHOLD
+            else DEFAULT_ARTIFACT_DECLINE_FALLBACK
         )
-        approve = min(DEFAULT_APPROVE_THRESHOLD, decline * 0.5)
+        approve = min(0.11, decline * 0.5)
         return float(approve), float(decline)
-    raise ValueError(f"Unsupported policy profile: {policy_profile}")
+    if policy_profiles is None:
+        raise ValueError("Policy profiles are required for non-artifact policy resolution.")
+    if policy_profile not in policy_profiles:
+        available = sorted(policy_profiles.keys())
+        raise ValueError(
+            f"Unsupported policy profile: {policy_profile}. Available profiles: {available}"
+        )
+    return policy_profiles[policy_profile]
 
 
 def score_with_policy(
@@ -152,15 +180,22 @@ def run_inference(
     approve_threshold: float | None,
     decline_threshold: float | None,
     policy_profile: PolicyProfile = "primary",
+    policy_config_path: Path = DEFAULT_POLICY_CONFIG_PATH,
 ) -> tuple[pd.DataFrame, float, float]:
     """Load data + model and return scored output with resolved thresholds."""
     df = pd.read_csv(input_path)
     validate_dataframe(df, require_label=False)
 
     bundle = load_model_bundle(model_path)
+    policy_profiles = (
+        None
+        if policy_profile == "artifact"
+        else load_policy_profiles(policy_config_path)
+    )
     profile_approve_threshold, profile_decline_threshold = resolve_profile_thresholds(
         policy_profile=policy_profile,
         artifact_decline_threshold=bundle.artifact_decline_threshold,
+        policy_profiles=policy_profiles,
     )
     final_decline_threshold = (
         decline_threshold
@@ -203,12 +238,18 @@ def main() -> None:
     parser.add_argument("--output-path", type=Path, default=None, help="Where to write scored CSV.")
     parser.add_argument(
         "--policy-profile",
-        choices=["primary", "fallback", "artifact"],
+        choices=["primary", "fallback", "phase2_guarded", "artifact"],
         default="primary",
         help="Default threshold profile when explicit thresholds are not provided.",
     )
     parser.add_argument("--approve-threshold", type=float, default=None, help="Approve upper bound.")
     parser.add_argument("--decline-threshold", type=float, default=None, help="Decline lower bound.")
+    parser.add_argument(
+        "--policy-config-path",
+        type=Path,
+        default=DEFAULT_POLICY_CONFIG_PATH,
+        help="Path to policy configuration json.",
+    )
     args = parser.parse_args()
 
     scored_df, approve_threshold, decline_threshold = run_inference(
@@ -218,6 +259,7 @@ def main() -> None:
         policy_profile=args.policy_profile,
         approve_threshold=args.approve_threshold,
         decline_threshold=args.decline_threshold,
+        policy_config_path=args.policy_config_path,
     )
 
     print("=== Inference Summary ===")
