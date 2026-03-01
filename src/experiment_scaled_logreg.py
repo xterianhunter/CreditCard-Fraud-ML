@@ -18,6 +18,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from data_contract import LABEL_COLUMN, feature_columns
+from mlflow_utils import log_artifact, log_metrics, log_params, parse_tags, start_mlflow_run
 from train_baseline import load_data, recall_at_fpr, save_model_bundle, split_train_test
 
 
@@ -181,84 +182,128 @@ def main() -> None:
         action="store_true",
         help="If set, do not persist best model artifact.",
     )
+    parser.add_argument("--mlflow", action="store_true", help="Enable MLflow tracking.")
+    parser.add_argument("--mlflow-experiment", type=str, default=None)
+    parser.add_argument("--mlflow-tracking-uri", type=str, default=None)
+    parser.add_argument("--mlflow-run-name", type=str, default=None)
+    parser.add_argument(
+        "--mlflow-tags",
+        type=str,
+        default=None,
+        help="Comma-separated key=value tags for MLflow.",
+    )
     args = parser.parse_args()
 
-    c_values = parse_c_values(args.c_values)
-    candidates = build_candidates(c_values=c_values, max_iter=args.max_iter)
-
-    df = load_data(args.data_path)
-    train_df, test_df = split_train_test(df, test_size=args.test_size)
-    model_features = feature_columns(train_df.columns)
-    x_train = train_df[model_features].to_numpy()
-    y_train = train_df[LABEL_COLUMN].to_numpy()
-    x_test = test_df[model_features].to_numpy()
-    y_test = test_df[LABEL_COLUMN].to_numpy()
-
-    rows: list[dict[str, object]] = []
-    best_index = 0
-    best_key: tuple[float, float, float] = (-1.0, -1.0, -1.0)
-
-    for idx, cand in enumerate(candidates):
-        cand.model.fit(x_train, y_train)
-        y_score = cand.model.predict_proba(x_test)[:, 1]
-        pr_auc = average_precision_score(y_test, y_score)
-        roc_auc = roc_auc_score(y_test, y_score)
-        recall, threshold = recall_at_fpr(y_test, y_score, target_fpr=args.target_fpr)
-
-        key = (float(recall), float(pr_auc), float(roc_auc))
-        if key > best_key:
-            best_key = key
-            best_index = idx
-
-        rows.append(
+    tags = parse_tags(args.mlflow_tags)
+    with start_mlflow_run(
+        enabled=args.mlflow,
+        experiment_name=args.mlflow_experiment,
+        tracking_uri=args.mlflow_tracking_uri,
+        run_name=args.mlflow_run_name or "experiment_scaled_logreg",
+        tags=tags,
+    ):
+        log_params(
+            args.mlflow,
             {
-                "name": cand.name,
-                "is_scaled": cand.is_scaled,
-                "c_value": cand.c_value,
-                "max_iter": cand.max_iter,
-                "pr_auc": float(pr_auc),
-                "roc_auc": float(roc_auc),
-                "recall_at_target_fpr": float(recall),
-                "threshold_at_target_fpr": float(threshold),
-            }
+                "data_path": str(args.data_path),
+                "test_size": float(args.test_size),
+                "target_fpr": float(args.target_fpr),
+                "c_values": args.c_values,
+                "max_iter": int(args.max_iter),
+                "skip_save_best_model": bool(args.skip_save_best_model),
+            },
         )
 
-    result_df = rank_results(pd.DataFrame(rows))
-    args.results_out_path.parent.mkdir(parents=True, exist_ok=True)
-    result_df.to_csv(args.results_out_path, index=False)
+        c_values = parse_c_values(args.c_values)
+        candidates = build_candidates(c_values=c_values, max_iter=args.max_iter)
 
-    report_text = build_markdown_report(
-        ranked=result_df,
-        train_rows=len(train_df),
-        test_rows=len(test_df),
-        target_fpr=args.target_fpr,
-        best_model_out_path=args.best_model_out_path,
-    )
-    args.report_out_path.parent.mkdir(parents=True, exist_ok=True)
-    args.report_out_path.write_text(report_text, encoding="utf-8")
+        df = load_data(args.data_path)
+        train_df, test_df = split_train_test(df, test_size=args.test_size)
+        model_features = feature_columns(train_df.columns)
+        x_train = train_df[model_features].to_numpy()
+        y_train = train_df[LABEL_COLUMN].to_numpy()
+        x_test = test_df[model_features].to_numpy()
+        y_test = test_df[LABEL_COLUMN].to_numpy()
 
-    best_candidate = candidates[best_index]
-    best_row = result_df.iloc[0]
-    if not args.skip_save_best_model:
-        save_model_bundle(
-            model=best_candidate.model,
-            model_feature_columns=model_features,
+        rows: list[dict[str, object]] = []
+        best_index = 0
+        best_key: tuple[float, float, float] = (-1.0, -1.0, -1.0)
+
+        for idx, cand in enumerate(candidates):
+            cand.model.fit(x_train, y_train)
+            y_score = cand.model.predict_proba(x_test)[:, 1]
+            pr_auc = average_precision_score(y_test, y_score)
+            roc_auc = roc_auc_score(y_test, y_score)
+            recall, threshold = recall_at_fpr(y_test, y_score, target_fpr=args.target_fpr)
+
+            key = (float(recall), float(pr_auc), float(roc_auc))
+            if key > best_key:
+                best_key = key
+                best_index = idx
+
+            rows.append(
+                {
+                    "name": cand.name,
+                    "is_scaled": cand.is_scaled,
+                    "c_value": cand.c_value,
+                    "max_iter": cand.max_iter,
+                    "pr_auc": float(pr_auc),
+                    "roc_auc": float(roc_auc),
+                    "recall_at_target_fpr": float(recall),
+                    "threshold_at_target_fpr": float(threshold),
+                }
+            )
+
+        result_df = rank_results(pd.DataFrame(rows))
+        args.results_out_path.parent.mkdir(parents=True, exist_ok=True)
+        result_df.to_csv(args.results_out_path, index=False)
+
+        report_text = build_markdown_report(
+            ranked=result_df,
+            train_rows=len(train_df),
+            test_rows=len(test_df),
             target_fpr=args.target_fpr,
-            threshold_for_target_fpr=float(best_row["threshold_at_target_fpr"]),
-            model_out_path=args.best_model_out_path,
+            best_model_out_path=args.best_model_out_path,
         )
+        args.report_out_path.parent.mkdir(parents=True, exist_ok=True)
+        args.report_out_path.write_text(report_text, encoding="utf-8")
 
-    print("=== Week 2 Experiment Summary ===")
-    print(f"Candidates evaluated: {len(candidates)}")
-    print(f"Best model: {best_row['name']}")
-    print(f"Best recall @ FPR<={args.target_fpr:.2%}: {float(best_row['recall_at_target_fpr']):.6f}")
-    print(f"Best PR-AUC: {float(best_row['pr_auc']):.6f}")
-    print(f"Best ROC-AUC: {float(best_row['roc_auc']):.6f}")
-    print(f"Best threshold: {float(best_row['threshold_at_target_fpr']):.6f}")
-    print(f"Wrote results: {args.results_out_path}")
-    print(f"Wrote report: {args.report_out_path}")
-    if not args.skip_save_best_model:
-        print(f"Saved best model artifact: {args.best_model_out_path}")
+        best_candidate = candidates[best_index]
+        best_row = result_df.iloc[0]
+        if not args.skip_save_best_model:
+            save_model_bundle(
+                model=best_candidate.model,
+                model_feature_columns=model_features,
+                target_fpr=args.target_fpr,
+                threshold_for_target_fpr=float(best_row["threshold_at_target_fpr"]),
+                model_out_path=args.best_model_out_path,
+            )
+
+        log_metrics(
+            args.mlflow,
+            {
+                "best_pr_auc": float(best_row["pr_auc"]),
+                "best_roc_auc": float(best_row["roc_auc"]),
+                "best_recall_at_target_fpr": float(best_row["recall_at_target_fpr"]),
+                "best_threshold_at_target_fpr": float(best_row["threshold_at_target_fpr"]),
+            },
+        )
+        log_artifact(args.mlflow, str(args.results_out_path))
+        log_artifact(args.mlflow, str(args.report_out_path))
+        if not args.skip_save_best_model:
+            log_artifact(args.mlflow, str(args.best_model_out_path))
+
+        print("=== Week 2 Experiment Summary ===")
+        print(f"Candidates evaluated: {len(candidates)}")
+        print(f"Best model: {best_row['name']}")
+        print(f"Best recall @ FPR<={args.target_fpr:.2%}: {float(best_row['recall_at_target_fpr']):.6f}")
+        print(f"Best PR-AUC: {float(best_row['pr_auc']):.6f}")
+        print(f"Best ROC-AUC: {float(best_row['roc_auc']):.6f}")
+        print(f"Best threshold: {float(best_row['threshold_at_target_fpr']):.6f}")
+        print(f"Wrote results: {args.results_out_path}")
+        print(f"Wrote report: {args.report_out_path}")
+        if not args.skip_save_best_model:
+            print(f"Saved best model artifact: {args.best_model_out_path}")
 
 
 if __name__ == "__main__":

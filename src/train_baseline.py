@@ -18,6 +18,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
 from sklearn.model_selection import train_test_split
 
 from data_contract import LABEL_COLUMN, TIME_COLUMN, feature_columns, validate_dataframe
+from mlflow_utils import log_artifact, log_metrics, log_params, parse_tags, start_mlflow_run
 
 
 def recall_at_fpr(y_true: np.ndarray, y_score: np.ndarray, target_fpr: float = 0.02) -> tuple[float, float]:
@@ -94,41 +95,81 @@ def main() -> None:
         action="store_true",
         help="If set, do not write model artifact to disk.",
     )
+    parser.add_argument("--mlflow", action="store_true", help="Enable MLflow tracking.")
+    parser.add_argument("--mlflow-experiment", type=str, default=None)
+    parser.add_argument("--mlflow-tracking-uri", type=str, default=None)
+    parser.add_argument("--mlflow-run-name", type=str, default=None)
+    parser.add_argument(
+        "--mlflow-tags",
+        type=str,
+        default=None,
+        help="Comma-separated key=value tags for MLflow.",
+    )
     args = parser.parse_args()
 
-    df = load_data(args.data_path)
-    train_df, test_df = split_train_test(df, test_size=args.test_size)
-
-    cols = feature_columns(train_df.columns)
-    x_train = train_df[cols].to_numpy(dtype=np.float32)
-    y_train = train_df[LABEL_COLUMN].to_numpy(dtype=np.int8)
-    x_test = test_df[cols].to_numpy(dtype=np.float32)
-    y_test = test_df[LABEL_COLUMN].to_numpy(dtype=np.int8)
-
-    model = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)
-    model.fit(x_train, y_train)
-
-    y_score = model.predict_proba(x_test)[:, 1]
-
-    pr_auc = average_precision_score(y_test, y_score)
-    roc_auc = roc_auc_score(y_test, y_score)
-    recall, threshold = recall_at_fpr(y_test, y_score, target_fpr=args.target_fpr)
-
-    print("=== Baseline Metrics ===")
-    print(f"Rows train/test: {len(train_df)}/{len(test_df)}")
-    print(f"PR-AUC: {pr_auc:.6f}")
-    print(f"ROC-AUC: {roc_auc:.6f}")
-    print(f"Recall @ FPR<={args.target_fpr:.2%}: {recall:.6f}")
-    print(f"Threshold for target FPR: {threshold:.6f}")
-    if not args.skip_model_save:
-        save_model_bundle(
-            model=model,
-            model_feature_columns=cols,
-            target_fpr=args.target_fpr,
-            threshold_for_target_fpr=threshold,
-            model_out_path=args.model_out_path,
+    tags = parse_tags(args.mlflow_tags)
+    with start_mlflow_run(
+        enabled=args.mlflow,
+        experiment_name=args.mlflow_experiment,
+        tracking_uri=args.mlflow_tracking_uri,
+        run_name=args.mlflow_run_name or "train_baseline",
+        tags=tags,
+    ):
+        log_params(
+            args.mlflow,
+            {
+                "data_path": str(args.data_path),
+                "test_size": float(args.test_size),
+                "target_fpr": float(args.target_fpr),
+                "model_out_path": str(args.model_out_path),
+                "skip_model_save": bool(args.skip_model_save),
+            },
         )
-        print(f"Saved model artifact: {args.model_out_path}")
+
+        df = load_data(args.data_path)
+        train_df, test_df = split_train_test(df, test_size=args.test_size)
+
+        cols = feature_columns(train_df.columns)
+        x_train = train_df[cols].to_numpy(dtype=np.float32)
+        y_train = train_df[LABEL_COLUMN].to_numpy(dtype=np.int8)
+        x_test = test_df[cols].to_numpy(dtype=np.float32)
+        y_test = test_df[LABEL_COLUMN].to_numpy(dtype=np.int8)
+
+        model = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=42)
+        model.fit(x_train, y_train)
+
+        y_score = model.predict_proba(x_test)[:, 1]
+
+        pr_auc = average_precision_score(y_test, y_score)
+        roc_auc = roc_auc_score(y_test, y_score)
+        recall, threshold = recall_at_fpr(y_test, y_score, target_fpr=args.target_fpr)
+
+        log_metrics(
+            args.mlflow,
+            {
+                "pr_auc": float(pr_auc),
+                "roc_auc": float(roc_auc),
+                "recall_at_target_fpr": float(recall),
+                "threshold_at_target_fpr": float(threshold),
+            },
+        )
+
+        print("=== Baseline Metrics ===")
+        print(f"Rows train/test: {len(train_df)}/{len(test_df)}")
+        print(f"PR-AUC: {pr_auc:.6f}")
+        print(f"ROC-AUC: {roc_auc:.6f}")
+        print(f"Recall @ FPR<={args.target_fpr:.2%}: {recall:.6f}")
+        print(f"Threshold for target FPR: {threshold:.6f}")
+        if not args.skip_model_save:
+            save_model_bundle(
+                model=model,
+                model_feature_columns=cols,
+                target_fpr=args.target_fpr,
+                threshold_for_target_fpr=threshold,
+                model_out_path=args.model_out_path,
+            )
+            log_artifact(args.mlflow, str(args.model_out_path))
+            print(f"Saved model artifact: {args.model_out_path}")
 
 
 if __name__ == "__main__":
